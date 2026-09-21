@@ -1,4 +1,4 @@
-"""Application settings, loaded once from the .env file in the project root."""
+"""Settings loaded from the .env file in the project root."""
 
 import os
 from pathlib import Path
@@ -10,11 +10,12 @@ load_dotenv(PROJECT_ROOT / ".env")
 
 
 def require_env(name: str) -> str:
-    """Return an environment variable, or fail with a clear message."""
     value = os.getenv(name)
     if not value:
         raise RuntimeError(f"{name} is missing. Add it to your .env file.")
     return value
 
 
-ADMIN_DATABASE_URL = require_env("ADMIN_DATABASE_URL")
+ADMIN_DATABASE_URL = require_env("ADMIN_DATABASE_URL")      # setup scripts only
+ANALYST_DATABASE_URL = require_env("ANALYST_DATABASE_URL")  # the agent's connection
+MAX_RESULT_ROWS = 200
