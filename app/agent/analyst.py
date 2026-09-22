@@ -38,6 +38,6 @@ def build_analyst():
         system_prompt=SYSTEM_PROMPT,
         middleware=[
             ModelCallLimitMiddleware(run_limit=12, exit_behavior="end"),
-            ToolCallLimitMiddleware(run_limit=10, exit_behavior="end"),
+            ToolCallLimitMiddleware(run_limit=15, exit_behavior="end"),
         ],
     )
