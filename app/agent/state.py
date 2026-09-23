@@ -23,3 +23,6 @@ class AnalysisState(TypedDict):
     # of queries should be appended to the existing list. 
     # reducers** operator.add is a reducer      # lists are joined
     final_answer: str                                     # replaced
+
+    attempts: int                                         # how many times the analyst ran
+    needs_more: bool                                      # evaluator's routing decision 

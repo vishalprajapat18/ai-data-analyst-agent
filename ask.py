@@ -14,11 +14,13 @@ def main() -> None:
         "messages": [{"role": "user", "content": question}],
         "queries": [],
         "final_answer": "",
+        "attempts": 0,
+        "needs_more": False,
     })
 
     for query in state["queries"]:
         print(f"[sql] {' '.join(query.split())[:150]}")
-    print(f"\n{len(state['queries'])} queries ran")
+    print(f"\n{len(state['queries'])} queries , {state['attempts']} analyst pass(es)")
 
     print("\n=== ANSWER ===\n")
     print(state["final_answer"])

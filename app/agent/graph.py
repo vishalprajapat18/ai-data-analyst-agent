@@ -6,7 +6,7 @@ from langgraph.graph import END, START, StateGraph
 
 from app.agent.analyst import build_analyst
 from app.agent.state import AnalysisState
-
+from app.agent.evaluator import evaluate_node, route_after_review
 
 def analyst_node(state: AnalysisState) -> dict:
     """Run the LangChain agent and record what it did."""
@@ -38,10 +38,14 @@ def build_graph():
     builder = StateGraph(AnalysisState)
 
     builder.add_node("analyst", analyst_node)
+    builder.add_node("evaluate", evaluate_node)
     builder.add_node("respond", respond_node)
+    
 
     builder.add_edge(START, "analyst")
-    builder.add_edge("analyst", "respond")
+    builder.add_edge("analyst", "evaluate")
+    builder.add_conditional_edges("evaluate",route_after_review,
+                                {"analyst": "analyst", "respond": "respond"})
     builder.add_edge("respond", END)
 
     return builder.compile()
