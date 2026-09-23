@@ -2,21 +2,26 @@
 
 import sys
 
-from app.agent.analyst import build_analyst
+from app.agent.graph import build_graph
 
 
 def main() -> None:
     question = " ".join(sys.argv[1:]) or input("Question: ")
-    agent = build_analyst()
+    graph = build_graph()
 
-    result = agent.invoke({"messages": [{"role": "user", "content": question}]})
+    state = graph.invoke({
+        "question": question,
+        "messages": [{"role": "user", "content": question}],
+        "queries": [],
+        "final_answer": "",
+    })
 
-    for message in result["messages"]:
-        for call in getattr(message, "tool_calls", None) or []:
-            print(f"[tool] {call['name']}: {str(call['args'])[:150]}")
+    for query in state["queries"]:
+        print(f"[sql] {' '.join(query.split())[:150]}")
+    print(f"\n{len(state['queries'])} queries ran")
 
     print("\n=== ANSWER ===\n")
-    print(result["messages"][-1].content)
+    print(state["final_answer"])
 
 
 if __name__ == "__main__":
