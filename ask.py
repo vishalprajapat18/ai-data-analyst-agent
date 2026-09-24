@@ -16,11 +16,18 @@ def main() -> None:
         "final_answer": "",
         "attempts": 0,
         "needs_more": False,
+        "chart_spec": None,
+        "chart": None,
     })
 
     for query in state["queries"]:
         print(f"[sql] {' '.join(query.split())[:150]}")
     print(f"\n{len(state['queries'])} queries , {state['attempts']} analyst pass(es)")
+
+    if state["chart"]:
+        import plotly.graph_objects as go
+        go.Figure(state["chart"]).write_html("chart.html")
+        print("chart saved to chart.html")
 
     print("\n=== ANSWER ===\n")
     print(state["final_answer"])

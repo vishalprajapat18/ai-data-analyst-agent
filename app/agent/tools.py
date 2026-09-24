@@ -12,6 +12,17 @@ def list_tables() -> str:
     """List the tables in the analytics database. Call this first."""
     return ", ".join(sqlalchemy_inspect(analyst_engine).get_table_names())
 
+def schema_summary() -> str:
+    """Every table and column, plus the period the data covers."""
+    inspector = sqlalchemy_inspect(analyst_engine)
+    lines = []
+    for table in inspector.get_table_names():
+        columns = ", ".join(c["name"] for c in inspector.get_columns(table))
+        lines.append(f"{table}({columns})")
+
+    span = run_query("SELECT MIN(order_date), MAX(order_date) FROM orders").rows[0]
+    lines.append(f"Orders run from {span[0]} to {span[1]}. There is no data outside that period.")
+    return "\n".join(lines)
 
 @tool
 def describe_tables(table_names: str) -> str:

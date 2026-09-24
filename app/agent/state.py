@@ -25,4 +25,6 @@ class AnalysisState(TypedDict):
     final_answer: str                                     # replaced
 
     attempts: int                                         # how many times the analyst ran
-    needs_more: bool                                      # evaluator's routing decision 
+    needs_more: bool   
+    chart_spec: dict | None                               # which query to chart, and how
+    chart: dict | None                                    # the finished Plotly figure                                   # evaluator's routing decision 
