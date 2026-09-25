@@ -9,6 +9,12 @@ from langchain_core.messages import AnyMessage
 from langgraph.graph import add_messages
 
 
+def merge_queries(existing: list[str], new: list[str] | None) -> list[str]:
+    """Collect queries within a turn; None clears them at the start of a new one."""
+    if new is None:
+        return []
+    return existing + new
+
 class AnalysisState(TypedDict):
     """One analysis run.
 
@@ -18,13 +24,12 @@ class AnalysisState(TypedDict):
 
     question: str
     messages: Annotated[list[AnyMessage], add_messages]   # merged by id
-    queries: Annotated[list[str], operator.add]    
+    queries: Annotated[list[str], merge_queries]    
     #queries is a list of SQL strings, and every new list 
     # of queries should be appended to the existing list. 
-    # reducers** operator.add is a reducer      # lists are joined
-    final_answer: str                                     # replaced
-
-    attempts: int                                         # how many times the analyst ran
+    # reducers** operator.add is a reducer   # lists are joined
+    final_answer: str                     # replaced
+    attempts: int                         # how many times the analyst ran
     needs_more: bool   
-    chart_spec: dict | None                               # which query to chart, and how
-    chart: dict | None                                    # the finished Plotly figure                                   # evaluator's routing decision 
+    chart_spec: dict | None               # which query to chart, and how
+    chart: dict | None                     # the finished Plotly figure                                   # evaluator's routing decision 

@@ -8,11 +8,13 @@ from langchain.agents.middleware import ModelCallLimitMiddleware, ToolCallLimitM
 from app.agent.tools import describe_tables, list_tables, run_sql, schema_summary
 from app.core.llm import get_llm
 
-SYSTEM_PROMPT = f"""You are a senior data analyst working with a PostgreSQL e-commerce database.
-Today is {date.today().isoformat()}.
+
+
+PROMPT_TEMPLATE = """You are a senior data analyst working with a PostgreSQL e-commerce database.
+Today is {today}.
 
 The database:
-{schema_summary()}
+{schema}
 
 How to work:
 1. The schema above is complete. Only call describe_tables if you need column notes or exact types.
@@ -35,14 +37,16 @@ Your final answer:
 - Say which factor mattered most.
 - Under 200 words, and no SQL in the answer.
 """
-
+def system_prompt() -> str:
+    """Built when the agent is created, not at import, so tests can import this module."""
+    return PROMPT_TEMPLATE.format(today=date.today().isoformat(), schema=schema_summary())
 
 def build_analyst():
     """Create the agent. LangChain runs the think -> call tool -> read result loop."""
     return create_agent(
         model=get_llm(),
         tools=[list_tables, describe_tables, run_sql, ],
-        system_prompt=SYSTEM_PROMPT,
+        system_prompt=system_prompt(),
         middleware=[
             # Model calls must stay above tool calls: every tool call needs one.
             ModelCallLimitMiddleware(run_limit=16, exit_behavior="end"),

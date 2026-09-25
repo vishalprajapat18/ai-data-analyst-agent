@@ -8,6 +8,8 @@ from app.agent.analyst import build_analyst
 from app.agent.charts import build_chart
 from app.agent.evaluator import evaluate_node, route_after_review
 from app.agent.state import AnalysisState
+from langgraph.checkpoint.memory import InMemorySaver
+
 
 LIMIT_NOTICES = ("Model call limits exceeded", "Tool call limit reached")
 
@@ -46,8 +48,10 @@ def respond_node(state: AnalysisState) -> dict:
     return {"final_answer": "The analysis stopped before producing an answer."}
 
 
-def build_graph():
-    """Wire the nodes together and compile the workflow."""
+def build_graph(checkpointer=None):
+    """Wire the nodes together and compile the workflow.
+    A checkpointer saves the state after every node, so a later question on the
+    same thread_id continues the same conversation."""
     builder = StateGraph(AnalysisState)
 
     builder.add_node("analyst", analyst_node)
@@ -62,4 +66,4 @@ def build_graph():
     builder.add_edge("chart", "respond")
     builder.add_edge("respond", END)
 
-    return builder.compile()
+    return builder.compile(checkpointer=checkpointer or InMemorySaver())
