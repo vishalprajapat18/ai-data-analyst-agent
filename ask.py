@@ -5,13 +5,15 @@ Follow-up questions in the same session remember what came before.
 
 import sys
 
+from langgraph.types import Command
+
 from app.agent.graph import build_graph
 
 THREAD = {"configurable": {"thread_id": "cli"}}
 
 
 def ask(graph, question: str) -> None:
-    state = graph.invoke({
+    payload = {
         "question": question,
         "messages": [{"role": "user", "content": question}],
         "queries": None,        # None clears last turn's queries
@@ -20,7 +22,14 @@ def ask(graph, question: str) -> None:
         "needs_more": False,
         "chart_spec": None,
         "chart": None,
-    }, THREAD)
+    }
+
+    while True:
+        state = graph.invoke(payload, THREAD)
+        pending = state.get("__interrupt__")
+        if not pending:
+            break
+        payload = Command(resume=input(f"\n[the analyst asks] {pending[0].value}\n> ").strip())
 
     for query in state["queries"]:
         print(f"[sql] {' '.join(query.split())[:150]}")

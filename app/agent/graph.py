@@ -9,7 +9,7 @@ from app.agent.charts import build_chart
 from app.agent.evaluator import evaluate_node, route_after_review
 from app.agent.state import AnalysisState
 from langgraph.checkpoint.memory import InMemorySaver
-
+from langchain_core.messages import trim_messages
 
 LIMIT_NOTICES = ("Model call limits exceeded", "Tool call limit reached")
 
@@ -17,7 +17,10 @@ LIMIT_NOTICES = ("Model call limits exceeded", "Tool call limit reached")
 def analyst_node(state: AnalysisState) -> dict:
     """Run the LangChain agent and record what it did."""
     agent = build_analyst()
-    result = agent.invoke({"messages": state["messages"]})
+        # Send only the last few turns; the full conversation stays in state.
+    history = trim_messages(state["messages"], max_tokens=12, token_counter=len,
+                            strategy="last", start_on="human", include_system=False)
+    result = agent.invoke({"messages": history})
 
     # Keep only messages this run produced. Messages already in state have ids.
     known_ids = {message.id for message in state["messages"]}

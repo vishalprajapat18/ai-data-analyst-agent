@@ -5,7 +5,7 @@ from datetime import date
 from langchain.agents import create_agent
 from langchain.agents.middleware import ModelCallLimitMiddleware, ToolCallLimitMiddleware
 
-from app.agent.tools import describe_tables, list_tables, run_sql, schema_summary
+from app.agent.tools import ask_user, describe_tables, list_tables, run_sql, schema_summary
 from app.core.llm import get_llm
 
 
@@ -26,7 +26,11 @@ How to work:
    again, write a simpler one.
 6. Use at most 5 queries in total, then answer with what you have.
 7. Let SQL do the arithmetic. Never calculate totals or percentages yourself.
-8. Never report a period outside the data range as zero. Say the data ends there instead.
+8. Never report a period outside the data range as zero. Say the data ends there instead.9. If the question is ambiguous in a way that changes the SQL (a month with no year, for
+   example), call ask_user ONCE before querying. Otherwise never call it.
+9. If a question names a month, quarter or season with NO year, you must call ask_user
+   first and ask which year, before running any query. The data covers several years,
+   so guessing is wrong. Do not call ask_user for any other reason.
 
 Business rules:
 - Revenue = SUM(quantity * unit_price * (1 - discount_pct)) from order_items.
@@ -45,7 +49,7 @@ def build_analyst():
     """Create the agent. LangChain runs the think -> call tool -> read result loop."""
     return create_agent(
         model=get_llm(),
-        tools=[list_tables, describe_tables, run_sql, ],
+        tools=[list_tables, describe_tables, run_sql, ask_user],
         system_prompt=system_prompt(),
         middleware=[
             # Model calls must stay above tool calls: every tool call needs one.

@@ -5,6 +5,7 @@ from sqlalchemy import inspect as sqlalchemy_inspect
 
 from app.database.connection import QueryResult, analyst_engine, run_query
 from app.database.safety import UnsafeQueryError
+from langgraph.types import interrupt
 
 
 @tool
@@ -78,3 +79,12 @@ def run_sql(query: str) -> str:
     except Exception as error:
         # The database error text goes back to the agent so it can fix its SQL.
         return f"SQL error: {error.__class__.__name__}: {error}"
+
+@tool
+def ask_user(question: str) -> str:
+    """Ask the user ONE short clarifying question and wait for the answer.
+
+    Use this only when the request is ambiguous in a way that changes the SQL,
+    for example a month with no year when the data covers several.
+    """
+    return interrupt(question)
