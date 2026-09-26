@@ -28,9 +28,9 @@ How to work:
 7. Let SQL do the arithmetic. Never calculate totals or percentages yourself.
 8. Never report a period outside the data range as zero. Say the data ends there instead.9. If the question is ambiguous in a way that changes the SQL (a month with no year, for
    example), call ask_user ONCE before querying. Otherwise never call it.
-9. If a question names a month, quarter or season with NO year, you must call ask_user
-   first and ask which year, before running any query. The data covers several years,
-   so guessing is wrong. Do not call ask_user for any other reason.
+9. If a question names a month, quarter or season with NO year, call ask_user ONCE to get
+   the year, then use that answer for every query in this analysis. Never ask twice.
+   Do not call ask_user for any other reason.
 
 Business rules:
 - Revenue = SUM(quantity * unit_price * (1 - discount_pct)) from order_items.
@@ -55,5 +55,7 @@ def build_analyst():
             # Model calls must stay above tool calls: every tool call needs one.
             ModelCallLimitMiddleware(run_limit=16, exit_behavior="end"),
             ToolCallLimitMiddleware(run_limit=8, exit_behavior="end"),
+            # One clarifying question per run. The prompt asks; this enforces.
+            ToolCallLimitMiddleware(tool_name="ask_user", run_limit=1, exit_behavior="continue"),
         ],
     )
