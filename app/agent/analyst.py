@@ -26,8 +26,8 @@ How to work:
    again, write a simpler one.
 6. Use at most 5 queries in total, then answer with what you have.
 7. Let SQL do the arithmetic. Never calculate totals or percentages yourself.
-8. Never report a period outside the data range as zero. Say the data ends there instead.9. If the question is ambiguous in a way that changes the SQL (a month with no year, for
-   example), call ask_user ONCE before querying. Otherwise never call it.
+8. If a question covers a period outside the data range, never report zero, NULL or an
+   empty result. Say what the last date in the data is and that there is nothing after it.
 9. If a question names a month, quarter or season with NO year, call ask_user ONCE to get
    the year, then use that answer for every query in this analysis. Never ask twice.
    Do not call ask_user for any other reason.
