@@ -1,215 +1,283 @@
-# AI Data Analyst Agent
+<h1 align="center">AI Data Analyst Agent</h1>
 
-An AI agent that answers business questions about a PostgreSQL e-commerce database.
-It inspects the schema, writes and runs read-only SQL, judges whether its own evidence
-is sufficient, runs more queries when it isn't, and explains the result in business
-terms with a chart.
+<p align="center">
+  <b>Answers business questions about a PostgreSQL database — writes its own SQL,<br/>
+  reviews its own evidence, and asks before it guesses.</b>
+</p>
 
-> **"Why did revenue drop in March 2026?"**
->
-> Revenue fell from $174,369 in February to $141,646 in March, a drop of $32,723 (-18.8%).
-> Electronics fell from $84,231 to $41,473, a loss of $42,758 — larger than the total
-> decline, since other categories grew slightly. Order volume was flat (377 → 378), and
-> Electronics units halved (180 → 90) while average price moved 1%. So the cause is
-> product mix, not traffic.
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.13-3776AB?style=flat-square&logo=python&logoColor=white" />
+  <img src="https://img.shields.io/badge/LangGraph-stateful%20agent-1C3C3C?style=flat-square" />
+  <img src="https://img.shields.io/badge/LangChain-tool%20calling-1C3C3C?style=flat-square" />
+  <img src="https://img.shields.io/badge/FastAPI-async%20API-009688?style=flat-square&logo=fastapi&logoColor=white" />
+  <img src="https://img.shields.io/badge/MCP-server-000000?style=flat-square" />
+  <img src="https://img.shields.io/badge/PostgreSQL-read--only-4169E1?style=flat-square&logo=postgresql&logoColor=white" />
+  <img src="https://img.shields.io/badge/LangSmith-evaluated-FF6B35?style=flat-square" />
+  <img src="https://img.shields.io/badge/Docker-compose-2496ED?style=flat-square&logo=docker&logoColor=white" />
+</p>
 
-That answer took four queries. The agent chose all of them.
+<!-- Record this before pushing, or delete the line. A broken image here is worse than none. -->
+<p align="center"><img src="docs/demo.gif" width="760" alt="The agent answering a question: writing SQL, reviewing evidence, charting the result" /></p>
+
+<p align="center">
+<b>6/7</b> answer accuracy &nbsp;·&nbsp; <b>7/7</b> within query budget &nbsp;·&nbsp; <b>~$0.0009</b> per analysis &nbsp;·&nbsp; <b>20.3s</b> median &nbsp;·&nbsp; <b>0</b> writes possible
+</p>
 
 ---
 
-## Why this is an agent, not a Text-to-SQL wrapper
+## What it does
 
-A Text-to-SQL tool maps one question to one query. This decides how deep to go based on
-what it finds.
+Ask *"why did revenue grow in 2025?"* and it runs a loop: write SQL, read the rows,
+decide whether the evidence actually supports a conclusion, run more SQL if it doesn't,
+then answer in business language with a chart.
 
-The dataset contains a deliberate trap: in March 2026, **order count is flat while revenue
-drops 19%**. A single query on order volume concludes "nothing changed" — and is wrong.
-The real cause only appears in the second and third query.
+```
+$ python ask.py "Why did revenue grow in 2025?"
 
-| Pipeline | This project |
+[sql] SELECT EXTRACT(YEAR FROM o.order_date), SUM(oi.quantity * oi.unit_price * ...
+[sql] SELECT c.category_name, SUM(...) FROM order_items oi JOIN products p ...
+2 queries, 2 analyst pass(es)
+
+=== ANSWER ===
+Revenue rose $270,003 (13.2%) to $2,315,167 in 2025. Electronics was the engine:
+$911,266 → $1,059,796, contributing $148,530 of the $270,003 increase. Every other
+category grew, but none added more than $50k individually.
+```
+
+### It is not a text-to-SQL wrapper
+
+A wrapper turns one question into one query and prints the rows. Five things here don't
+fit that description:
+
+| | |
 |---|---|
-| question → SQL → rows | question → plan → query → **read result** → decide → query again → explain |
-| Fixed number of queries | 1 for a simple lookup, 4–7 for a "why" question |
-| Answer is a table | Answer names the driver, with the numbers behind it |
+| **Chooses its own tools** | Nothing hard-codes which query runs. The model decides whether it needs the schema, one query, or four |
+| **Recovers from its own errors** | Database errors are returned to the model *as text*, so bad SQL gets corrected instead of crashing the run |
+| **Judges its own work** | A reviewer node reads the SQL that ran and the answer that was written, and sends the run back when the evidence doesn't support the claim |
+| **Stops to ask a human** | "Revenue in March" across three years of data pauses the graph mid-run and waits for an answer |
+| **Bounded** | Hard caps on model calls, tool calls and clarifying questions, so a confused run ends instead of looping |
+
+## Try it — two commands
+
+```bash
+docker compose up --build
+docker compose exec api python -m app.database.seed
+```
+
+Postgres builds its own schema and read-only role on first boot. Then open
+**http://localhost:8000/docs**.
 
 ---
 
 ## Architecture
 
 ```mermaid
-graph TD;
-    __start__ --> analyst;
-    analyst --> evaluate;
-    evaluate -.->|evidence too thin| analyst;
-    evaluate -.->|chart helps| chart;
-    evaluate -.->|no chart| respond;
-    chart --> respond;
-    respond --> __end__;
+flowchart LR
+    Q([Question]) --> A[<b>analyst</b><br/>writes and runs SQL]
+    A --> E{<b>evaluate</b><br/>is the evidence enough?}
+    E -->|no — retry| A
+    E -->|yes, chartable| C[<b>chart</b><br/>deterministic]
+    E -->|yes| R[<b>respond</b><br/>deterministic]
+    C --> R
+    R --> ANS([Answer + Plotly chart])
+    A -. ambiguous .-> H[/<b>ask_user</b><br/>run pauses for a human/]
+    H -. resumed .-> A
 ```
 
-### How one question flows through it
-
-1. **analyst** — a LangChain `create_agent` with three tools (`list_tables`,
-   `describe_tables`, `run_sql`). The model writes SQL, reads the rows, and decides
-   whether it needs another query. The schema and the data's date range are in the
-   system prompt, so it doesn't waste calls discovering them.
-2. **evaluate** — one structured-output call returns a typed object:
-   `sufficient`, `gaps`, and a chart decision. It asks whether the queries actually
-   support the answer — for a "why" question, whether a breakdown was run at all.
-3. **conditional edge** — if the evidence is thin, the graph routes **back to the
-   analyst** with the specific missing query named. Capped at 2 passes.
-4. **chart** — deterministic Python. The evaluator picks *which* query, *what type*
-   and a title; pandas and Plotly do the drawing. The model never writes chart code.
-5. **respond** — assembles the answer, the chart and the SQL that ran. No model call.
-
-### Who does what
-
-| Layer | Responsibility |
-|---|---|
-| **LangChain** | The inner tool loop: think → call tool → read result → repeat |
-| **LangGraph** | The outer workflow: state, evidence review, the retry cycle, the chart branch |
-| **Python** | Everything that must be deterministic: SQL validation, execution, charts |
-
-The distinction that matters: LangChain's loop lets the agent grade its own work.
-The evaluator is a **separate node with its own prompt and a hard retry cap**, which
-is why it catches what the agent misses.
-
----
-
-## SQL safety
-
-The agent generates SQL, so the question isn't whether it will eventually write something
-destructive — it's what happens when it does. Four layers, strongest first:
-
-| Layer | Mechanism | Can an LLM bypass it? |
+| Node | What it does | Model call? |
 |---|---|---|
-| 1. Database role | `analyst_readonly`, `SELECT` only, `default_transaction_read_only = on` | **No** |
-| 2. Validator | sqlglot parses the query and walks the tree | No |
-| 3. Limits | Row cap, `statement_timeout = 15s` | No |
-| 4. System prompt | Instructions | Yes — which is why it's last |
+| **analyst** | LangChain agent with 4 tools: `list_tables`, `describe_tables`, `run_sql`, `ask_user`. Schema and the data's real date range are already in its prompt, so it doesn't waste turns rediscovering them | yes |
+| **evaluate** | A smaller model returns a **typed Pydantic object** — `sufficient`, `gaps`, which query to chart. No text parsing. Caps retries so a stubborn question ends | yes |
+| **chart** | Re-runs the chosen query, finds the numeric column with pandas, returns Plotly JSON | **no** |
+| **respond** | Walks back for the last real answer, with a fallback if a limit was hit mid-run | **no** |
 
-Layer 2 walks the **whole parse tree**, because a write can hide inside a read:
-
-```sql
-WITH x AS (DELETE FROM orders RETURNING *) SELECT * FROM x
-```
-
-That starts with `WITH` and ends with `SELECT`. A check on the first keyword passes it.
-
-The test suite proves each layer separately. One test deliberately **bypasses the
-validator** and fires `DELETE` straight at the database:
-
-```
-sqlalchemy.exc.InternalError: cannot execute DELETE in a read-only transaction
-```
-
-Security that doesn't depend on my own code being bug-free.
+State is a `TypedDict` with reducers — `messages` accumulates across turns, `queries`
+uses a custom reducer where `None` clears the list so one turn's SQL never leaks into
+the next. A checkpointer saves state after every node, which is what makes memory,
+mid-run pausing and HTTP resumption **the same mechanism**.
 
 ---
 
-## The database
+## Safety: the agent cannot write, by two independent routes
 
-Five tables, seeded from a fixed random seed so the data is identical on every machine.
+It generates SQL and executes it. That is only acceptable with guarantees that don't
+depend on the model behaving.
 
-```
-customers(customer_id, customer_name, email, region, signup_date)
-categories(category_id, category_name)
-products(product_id, product_name, category_id, unit_price)
-orders(order_id, customer_id, order_date, status)
-order_items(order_item_id, order_id, product_id, quantity, unit_price, discount_pct)
-```
-
-800 customers · 120 products · 12,603 orders · 24,307 order items · Jan 2024 – Aug 2026
-
-**Revenue** = `SUM(quantity * unit_price * (1 - discount_pct))` where `status = 'completed'`.
-The definition also lives in a PostgreSQL `COMMENT ON` so the agent reads it from the
-schema rather than guessing.
-
-### Patterns planted on purpose
-
-The data is synthetic **so that correct answers are known**. Without ground truth there's
-no way to evaluate whether the agent is right or merely confident.
-
-| Pattern | Truth |
+| Layer | Stops |
 |---|---|
-| March 2026 dip | 141,646 vs 174,369 in Feb — driven by Electronics, **not** by order volume |
-| Electronics collapse | 180 units → 90; price flat |
-| Highest average order value | West (~688) vs 477–488 elsewhere |
-| Fast-growing customers | 8 customers with far higher 2026 spend |
-| Seasonality | Nov/Dec peak, Jan/Feb trough; 2024 → 2025 growth +13% |
+| **sqlglot parse check** | Anything that isn't exactly one `SELECT` — including a write hidden inside a CTE, which a regex misses |
+| **Read-only Postgres role** | `SELECT` only, plus `default_transaction_read_only = on`. A bug in the validator still can't write |
+| **Statement timeout** | A runaway query is killed by the database, not left to hang |
+| **Row cap** | Results capped, with a flag when output was truncated |
+
+Verified end-to-end — this is Claude Desktop, through the MCP server, trying to delete:
+
+```
+> DELETE FROM orders
+Query rejected: Only SELECT queries are allowed.
+```
 
 ---
 
-## Setup
+## Evaluation
+
+A LangSmith dataset where **every expected answer was verified by querying Postgres
+directly** — not estimated, not model-generated.
+
+| Metric | Result |
+|---|---|
+| Answer accuracy | **6 / 7** |
+| Stayed within its 5-query budget | **7 / 7** |
+| Median latency | **20.3 s** |
+| Cost per analysis | **~$0.0009** (26,055 tokens for a 7-question run) |
 
 ```bash
-git clone https://github.com/vishalprajapat18/ai-data-analyst-agent.git
-cd ai-data-analyst-agent
-
-python -m venv .venv
-.venv\Scripts\Activate.ps1        # Windows
-pip install -r requirements.txt
-
-cp .env.example .env               
-
-Create the database (`analytics`) in PostgreSQL, then:
-
-```bash
-python -m app.database.seed                  # schema + data
-# run app/database/roles.sql once as an admin user
-python -m pytest -q                          # 6 safety tests
-python ask.py "Why did revenue drop in March 2026?"
+python evaluate_agent.py
 ```
+
+Two deterministic evaluators — one checks the expected facts appear, one checks query
+budget adherence. **No LLM judge, on purpose**: the ground truth is computable, so a
+judge would add cost and non-determinism for nothing. A judge earns its place when
+correctness isn't checkable, like grading tone.
+
+**What evaluation caught.** Baseline was 5/7.
+
+- **A real bug** — asked about a period outside the data, it answered *"the query
+  returns NULL"* instead of explaining the data ends 2026-08-31. Tightened the rule,
+  re-ran, fixed. Measured before and after.
+- **A bug in my test** — true revenue is `2,045,164.62`; the agent correctly rounded to
+  `2,045,165`; my expected value had truncated to `...164`. The agent was right.
+
+Telling those two apart is the skill the step was worth having.
+
+**Honest limitation.** One check is still phrasing-sensitive. Three runs of the same
+question produced *"2026-08-31"*, *"NULL"*, and *"the latest order is dated…"* — all
+correct, all worded differently. Exact string matching measures formatting, not
+correctness. The robust fix is numeric parsing with tolerance or a semantic judge; both
+were skipped to keep evaluation deterministic and nearly free.
 
 ---
 
-## Example questions
+## Three interfaces, one safety layer
 
-| Question | Behaviour |
-|---|---|
-| "What was the total revenue in 2025?" | 1 query, no chart |
-| "Show monthly revenue in 2026" | 1 query, line chart |
-| "Why did revenue drop in March 2026?" | 4–7 queries across 2 passes, category and volume breakdown |
-| "Which region has the highest average order value?" | 2 queries, bar chart |
+```bash
+python ask.py "Why did revenue grow in 2025?"          # CLI
+```
+
+**HTTP API** — human-in-the-loop over a *stateless* protocol. `input()` can't exist over
+HTTP, so the interrupt becomes a response and the `thread_id` becomes the resume token:
+
+```jsonc
+POST /ask  { "message": "Why did revenue drop in March?" }
+→ { "status": "needs_input", "thread_id": "9f2c…",
+    "agent_question": "Which year's March?" }
+
+POST /ask  { "message": "2024", "thread_id": "9f2c…" }
+→ { "status": "answer", "answer": "…", "queries": [...], "chart": {…} }
+```
+
+Send the same `thread_id` with a follow-up and the conversation continues — the same
+checkpointer that makes pausing work.
+
+**MCP server** — 29 lines exposing the database over the Model Context Protocol, so any
+MCP client (Claude Desktop, Cursor, MCP Inspector) can query it. It reuses the same
+`run_query` path, so the validator and read-only role cover it too. Three front doors,
+one place where safety lives.
+
+<details>
+<summary>Registering it with Claude Desktop (Microsoft Store gotcha)</summary>
+
+On Store installs, `claude_desktop_config.json` lives under
+`%LOCALAPPDATA%\Packages\Claude_*\LocalCache\Roaming\Claude\`, **not** `%APPDATA%\Claude\`,
+which every tutorial says. Settings → Developer → Edit config opens the correct one.
+</details>
+
+---
+
+## Engineering decisions
+
+| Decision | Why | Rejected |
+|---|---|---|
+| One agent + a reviewer node | The review is a *step*, not a personality. Cheaper, debuggable, no inter-agent protocol to get wrong | Multi-agent crew |
+| `chart` and `respond` take no model call | They're mechanical. A model there adds latency, cost and a failure mode for nothing | LLM-everything |
+| Reviewer returns typed Pydantic | A typed decision can be routed on; prose has to be parsed and can be wrong in new ways each time | Parsing free text |
+| Limits live in middleware | The prompt said "ask once" and the model asked twice. **A prompt is a request; middleware is a guarantee** | Prompt-only rules |
+| Provider isolated in `app/core/llm.py` | A model was retired mid-build; the fix was one line | Scattered client calls |
+| Raw psycopg cursor | SQLAlchemy's `text()` reads `:` in JSON as a bound parameter; `exec_driver_sql` reads `%` in `LIKE` as a placeholder. Only the raw cursor survives both | ORM convenience |
+| Generated dataset, fixed seed | The answers are known in advance, so reasoning can be checked against ground truth instead of judged on plausibility | A Kaggle download |
 
 ---
 
 ## What went wrong while building it
 
-The failures were more instructive than the successes.
+The slow parts, because that's usually the useful half.
 
-**The agent invented a business conclusion.** It reported September–December 2026 revenue
-as $0 and concluded there had been no sales. The dataset simply ends on 31 August. Fixed
-by querying `MIN/MAX(order_date)` at startup and putting the coverage in the prompt. It
-now writes *"no data — the source data ends on 2026-08-31, not because revenue fell to zero."*
-A query returning zero does not mean the real-world value is zero.
-
-**Call limits were ordered wrongly.** The tool-call limit was 15 and the model-call limit
-12. Every tool call needs a model call first, so the model limit always fired first and
-runs ended with no answer at all. Now 8 tools / 16 models, and `respond` never shows a
-limit message to the user.
-
-**It over-queried badly.** Ten queries for "show monthly revenue", including five
-near-identical CTEs. Putting the schema in the prompt and adding a query budget brought
-that to **two**.
-
-**Prompt wording sets the default.** The chart rule phrased as "use -1 when a chart isn't
-useful" produced no charts at all. Rephrased as "most analyses deserve one; use -1 only
-for a single number", charts appeared.
+- **A dependency was sunset mid-build.** `langchain-community` disappeared. Replaced with thin `@tool` wrappers over my own functions — fewer moving parts, and tool docstrings became the real interface to the model.
+- **A model was retired mid-build.** `llama-3.3-70b-versatile` left the free tier. One line in `.env`, because the provider lives in exactly one file.
+- **SQLAlchemy kept mangling valid SQL.** `text()` and `exec_driver_sql` each broke on different characters the model legitimately generates. Only the raw driver cursor survives both — caught by a test.
+- **A test passed for the wrong reason.** It asserted `DatabaseError` on a write — and passed while Postgres was switched off entirely. Fixed by asserting on the message, not the type.
+- **The agent fired ten queries on one question.** Schema in the prompt plus an explicit query budget brought it to two.
+- **It reported future months as zero revenue.** The prompt now carries the data's real date range — and evaluation then caught the follow-up case where it said "NULL" instead.
+- **It asked the same clarifying question twice.** The prompt already forbade it. Moving the constraint to a per-tool call limit made it enforcement instead of a request.
 
 ---
 
-## Status
+## Repo map
 
-Built: database and seed · read-only role and SQL guardrails · LangChain agent and tools ·
-LangGraph workflow · evidence evaluator with retry loop · Plotly charts · LangSmith tracing
+```
+app/
+  agent/      analyst · evaluator · graph · state · charts · tools
+  core/       config · llm            ← the only provider-specific file
+  database/   schema.sql · roles.sql · safety.py · connection.py · seed.py
+  api/        FastAPI service
+ask.py                CLI
+mcp_server.py         MCP server
+evaluate_agent.py     LangSmith evaluation
+tests/                safety validator + graph routing
+docker-compose.yml    API + Postgres, schema and role created on first boot
+```
 
-Next: conversation memory · clarifying questions (human-in-the-loop) · FastAPI · MCP
-server · LangSmith evaluation suite · Docker
+## The dataset
+
+Generated deterministically from a fixed seed — **800** customers · **120** products ·
+**12,603** orders · **34,342** units · **2024-01-01 to 2026-08-31**.
+
+Generated rather than downloaded for one reason: **the answers are known in advance.**
+Real patterns are planted — Electronics growth driving the 2025 increase, among others —
+so the agent's *reasoning* can be checked against ground truth instead of judged on
+whether it sounds plausible. That is what makes the evaluation above mean anything.
+
+## Running locally
+
+```bash
+pip install -r requirements.txt
+cp .env.example .env          # add your keys
+python -m app.database.seed
+python ask.py "What was the total revenue in 2025?"
+pytest -q
+```
+
+Tests cover the deterministic parts — the SQL validator (including CTE-hidden writes,
+and a live check that the read-only role really refuses) and the routing function that
+decides whether the graph loops, charts or answers. They never call the model; model
+behaviour is measured in LangSmith instead, because the same question gets
+differently-worded answers each run — exactly the thing that must stay out of a test
+suite.
 
 ## Limitations
 
-- Synthetic data. Realistic in shape, but not real customers.
-- A hard "why" question takes 1–3 minutes on Groq's free tier.
-- Evidence review is capped at two passes; a very deep question can still stop early.
-- Charts are line and bar only, by design — enough to be useful, small enough to be safe.
+- **Latency** — 20 s for simple questions, 1–3 min for multi-query ones. It's a loop over a slow API, not a dashboard.
+- **In-memory checkpointer** — conversations don't survive a restart and don't span workers. The fix is the Postgres checkpointer: a one-line change, deliberately not made here.
+- **Read-only, single database** by design. No writes, no joins across sources.
+- **Free-tier rate limits** — concurrent requests can hit the provider's tokens-per-minute cap.
+- **One evaluation check is phrasing-sensitive**, as described above.
+- The Postgres password in `docker-compose.yml` is a **local development credential**; that port isn't published outside the Docker network. A real deployment injects it as a secret.
+
+---
+
+<p align="center">
+Python 3.13 · LangChain · LangGraph · Groq · PostgreSQL · SQLAlchemy + psycopg3 · sqlglot<br/>
+Pydantic · pandas · Plotly · FastAPI · MCP · LangSmith · Docker Compose · pytest
+</p>
+
+<p align="center"><sub>The LLM provider is isolated in <code>app/core/llm.py</code> — switching providers is one file and two environment variables.</sub></p>
