@@ -1,0 +1,29 @@
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: analytics
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./app/database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./app/database/roles.sql:/docker-entrypoint-initdb.d/02-roles.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      retries: 10
+
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      ADMIN_DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/analytics
+      ANALYST_DATABASE_URL: postgresql+psycopg://analyst_readonly:ReadOnly2026@db:5432/analytics
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

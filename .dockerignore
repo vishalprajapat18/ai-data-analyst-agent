@@ -1,0 +1,7 @@
+.venv
+__pycache__
+.git
+.env
+chart.html
+tests
+*.md
