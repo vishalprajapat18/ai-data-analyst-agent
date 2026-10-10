@@ -1,0 +1,46 @@
+name: tests
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: analytics
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      ADMIN_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/analytics
+      ANALYST_DATABASE_URL: postgresql+psycopg://analyst_readonly:ReadOnly2026@localhost:5432/analytics
+      GROQ_API_KEY: not-used-by-tests
+      PGPASSWORD: postgres
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Build the database, then the read-only role
+        run: |
+          python -m app.database.seed
+          psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d analytics -f app/database/roles.sql
+
+      - name: Run tests
+        run: pytest -q
