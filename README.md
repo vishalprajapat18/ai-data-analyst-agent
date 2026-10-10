@@ -14,6 +14,7 @@
   <img src="https://img.shields.io/badge/PostgreSQL-read--only-4169E1?style=flat-square&logo=postgresql&logoColor=white" />
   <img src="https://img.shields.io/badge/LangSmith-evaluated-FF6B35?style=flat-square" />
   <img src="https://img.shields.io/badge/Docker-compose-2496ED?style=flat-square&logo=docker&logoColor=white" />
+  <img src="https://github.com/vishalprajapat18/ai-data-analyst-agent/actions/workflows/tests.yml/badge.svg" />
 </p>
 
 <!-- Record this before pushing, or delete the line. A broken image here is worse than none. -->
