@@ -21,6 +21,11 @@ class AskRequest(BaseModel):
     thread_id: str | None = Field(default=None,
                                   description="Omit to start a new conversation.")
 
+    # What Swagger pre-fills under "Try it out": a real question and no thread_id,
+    # so visitors don't all share one conversation called "string".
+    model_config = {"json_schema_extra": {
+        "examples": [{"message": "Which product category had the highest revenue in 2025?"}]}}
+
 
 class AskResponse(BaseModel):
     status: Literal["answer", "needs_input"]

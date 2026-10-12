@@ -19,5 +19,5 @@ def require_env(name: str) -> str:
 ADMIN_DATABASE_URL = require_env("ADMIN_DATABASE_URL")      # setup scripts only
 ANALYST_DATABASE_URL = require_env("ANALYST_DATABASE_URL")  # the agent's connection
 GROQ_API_KEY = require_env("GROQ_API_KEY")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 MAX_RESULT_ROWS = 200
