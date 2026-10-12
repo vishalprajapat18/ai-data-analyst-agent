@@ -9,19 +9,25 @@
   <img src="https://img.shields.io/badge/Python-3.13-3776AB?style=flat-square&logo=python&logoColor=white" />
   <img src="https://img.shields.io/badge/LangGraph-stateful%20agent-1C3C3C?style=flat-square" />
   <img src="https://img.shields.io/badge/LangChain-tool%20calling-1C3C3C?style=flat-square" />
-  <img src="https://img.shields.io/badge/FastAPI-async%20API-009688?style=flat-square&logo=fastapi&logoColor=white" />
+  <img src="https://img.shields.io/badge/FastAPI-REST%20API-009688?style=flat-square&logo=fastapi&logoColor=white" />
+  <img src="https://img.shields.io/badge/Streamlit-chat%20UI-FF4B4B?style=flat-square&logo=streamlit&logoColor=white" />
   <img src="https://img.shields.io/badge/MCP-server-000000?style=flat-square" />
   <img src="https://img.shields.io/badge/PostgreSQL-read--only-4169E1?style=flat-square&logo=postgresql&logoColor=white" />
   <img src="https://img.shields.io/badge/LangSmith-evaluated-FF6B35?style=flat-square" />
   <img src="https://img.shields.io/badge/Docker-compose-2496ED?style=flat-square&logo=docker&logoColor=white" />
+  <img src="https://img.shields.io/badge/AWS-EC2-FF9900?style=flat-square&logo=amazonwebservices&logoColor=white" />
   <img src="https://github.com/vishalprajapat18/ai-data-analyst-agent/actions/workflows/tests.yml/badge.svg" />
 </p>
 
-<!-- Record this before pushing, or delete the line. A broken image here is worse than none. -->
 <p align="center"><img src="docs/demo.gif" width="760" alt="The agent answering a question: writing SQL, reviewing evidence, charting the result" /></p>
 
 <p align="center">
 <b>6/7</b> answer accuracy &nbsp;·&nbsp; <b>7/7</b> within query budget &nbsp;·&nbsp; <b>~$0.0009</b> per analysis &nbsp;·&nbsp; <b>20.3s</b> median &nbsp;·&nbsp; <b>0</b> writes possible
+</p>
+
+<p align="center">
+<b>Live demo</b> (AWS EC2, until December 2026): <a href="http://54.206.27.32"><b>chat UI</b></a> &nbsp;·&nbsp; <a href="http://54.206.27.32:8000/docs"><b>API docs</b></a><br/>
+<sub>Answers take 20–90 seconds: the agent writes SQL, runs it, and has a reviewer check the evidence before it replies.</sub>
 </p>
 
 ---
@@ -66,7 +72,7 @@ docker compose exec api python -m app.database.seed
 ```
 
 Postgres builds its own schema and read-only role on first boot. Then open
-**http://localhost:8000/docs**.
+**http://localhost** for the chat UI, or **http://localhost:8000/docs** for the API.
 
 ---
 
@@ -88,7 +94,7 @@ flowchart LR
 | Node | What it does | Model call? |
 |---|---|---|
 | **analyst** | LangChain agent with 4 tools: `list_tables`, `describe_tables`, `run_sql`, `ask_user`. Schema and the data's real date range are already in its prompt, so it doesn't waste turns rediscovering them | yes |
-| **evaluate** | A smaller model returns a **typed Pydantic object** — `sufficient`, `gaps`, which query to chart. No text parsing. Caps retries so a stubborn question ends | yes |
+| **evaluate** | The model returns a **typed Pydantic object** — `sufficient`, `gaps`, which query to chart. No text parsing. Caps retries so a stubborn question ends | yes |
 | **chart** | Re-runs the chosen query, finds the numeric column with pandas, returns Plotly JSON | **no** |
 | **respond** | Walks back for the last real answer, with a fallback if a limit was hit mid-run | **no** |
 
@@ -159,7 +165,7 @@ were skipped to keep evaluation deterministic and nearly free.
 
 ---
 
-## Three interfaces, one safety layer
+## Four interfaces, one safety layer
 
 ```bash
 python ask.py "Why did revenue grow in 2025?"          # CLI
@@ -182,8 +188,12 @@ checkpointer that makes pausing work.
 
 **MCP server** — 29 lines exposing the database over the Model Context Protocol, so any
 MCP client (Claude Desktop, Cursor, MCP Inspector) can query it. It reuses the same
-`run_query` path, so the validator and read-only role cover it too. Three front doors,
-one place where safety lives.
+`run_query` path, so the validator and read-only role cover it too.
+
+**Web UI** — a Streamlit chat in its own container. It doesn't import the agent: it only
+calls `POST /ask`, so a clarifying question shows up as a chat reply and the `thread_id`
+rides along with the next message. Answers come with the SQL that produced them and the
+chart, if there is one. Four front doors, one place where safety lives.
 
 <details>
 <summary>Registering it with Claude Desktop (Microsoft Store gotcha)</summary>
@@ -192,6 +202,20 @@ On Store installs, `claude_desktop_config.json` lives under
 `%LOCALAPPDATA%\Packages\Claude_*\LocalCache\Roaming\Claude\`, **not** `%APPDATA%\Claude\`,
 which every tutorial says. Settings → Developer → Edit config opens the correct one.
 </details>
+
+---
+
+## Deployment
+
+Live on a single **AWS EC2** instance (`t3.small`, Ubuntu 24.04) with the same Docker
+Compose file used locally — three containers: Postgres, the API and the UI.
+
+| | |
+|---|---|
+| **Restarts** | `restart: unless-stopped` on every service, so a reboot or crash brings the demo back on its own |
+| **Network** | Security group opens 80 (UI) and 8000 (API) to the world; SSH only from one IP and AWS's browser-terminal service. Postgres 5432 is never published |
+| **Secrets** | `.env` is written on the server and never committed; the server has its own Groq key, revocable on its own |
+| **Updates** | `git push` → on the server `git pull` and `docker compose up -d --build`. Data survives in a named volume |
 
 ---
 
@@ -214,7 +238,8 @@ which every tutorial says. Settings → Developer → Edit config opens the corr
 The slow parts, because that's usually the useful half.
 
 - **A dependency was sunset mid-build.** `langchain-community` disappeared. Replaced with thin `@tool` wrappers over my own functions — fewer moving parts, and tool docstrings became the real interface to the model.
-- **A model was retired mid-build.** `llama-3.3-70b-versatile` left the free tier. One line in `.env`, because the provider lives in exactly one file.
+- **A model was retired mid-build.** `llama-3.3-70b-versatile` was shut down by the provider. One line in `.env`, because the provider lives in exactly one file.
+- **…and it came back in production.** The first request to the AWS server returned 500. The container logs showed `404 model_not_found`: the server's `.env` had been copied from `.env.example`, which still named the retired model. Fixed the server in one line, then fixed the template and the code default so a fresh clone can't repeat it.
 - **SQLAlchemy kept mangling valid SQL.** `text()` and `exec_driver_sql` each broke on different characters the model legitimately generates. Only the raw driver cursor survives both — caught by a test.
 - **A test passed for the wrong reason.** It asserted `DatabaseError` on a write — and passed while Postgres was switched off entirely. Fixed by asserting on the message, not the type.
 - **The agent fired ten queries on one question.** Schema in the prompt plus an explicit query budget brought it to two.
@@ -231,11 +256,12 @@ app/
   core/       config · llm            ← the only provider-specific file
   database/   schema.sql · roles.sql · safety.py · connection.py · seed.py
   api/        FastAPI service
+ui/                   Streamlit chat, its own container, talks only to the API
 ask.py                CLI
 mcp_server.py         MCP server
 evaluate_agent.py     LangSmith evaluation
 tests/                safety validator + graph routing
-docker-compose.yml    API + Postgres, schema and role created on first boot
+docker-compose.yml    Postgres + API + UI, schema and role created on first boot
 ```
 
 ## The dataset
@@ -272,13 +298,14 @@ suite.
 - **Read-only, single database** by design. No writes, no joins across sources.
 - **Free-tier rate limits** — concurrent requests can hit the provider's tokens-per-minute cap.
 - **One evaluation check is phrasing-sensitive**, as described above.
-- The Postgres password in `docker-compose.yml` is a **local development credential**; that port isn't published outside the Docker network. A real deployment injects it as a secret.
+- The Postgres password in `docker-compose.yml` is a **development credential**; that port isn't published outside the Docker network, including on the live server. A production deployment would inject it as a secret.
+- **The demo is plain HTTP on an IP address** — no domain or TLS. Fine for a demo with no logins; a real service would sit behind HTTPS.
 
 ---
 
 <p align="center">
 Python 3.13 · LangChain · LangGraph · Groq · PostgreSQL · SQLAlchemy + psycopg3 · sqlglot<br/>
-Pydantic · pandas · Plotly · FastAPI · MCP · LangSmith · Docker Compose · pytest
+Pydantic · pandas · Plotly · FastAPI · Streamlit · MCP · LangSmith · Docker Compose · pytest · GitHub Actions · AWS EC2
 </p>
 
 <p align="center"><sub>The LLM provider is isolated in <code>app/core/llm.py</code> — switching providers is one file and two environment variables.</sub></p>
