@@ -26,7 +26,7 @@
 </p>
 
 <p align="center">
-<b>Live demo</b> (AWS EC2, until December 2026): <a href="http://54.206.27.32"><b>chat UI</b></a> &nbsp;·&nbsp; <a href="http://54.206.27.32:8000/docs"><b>API docs</b></a><br/>
+<b>Live demo</b> (AWS EC2): <a href="http://54.206.27.32"><b>chat UI</b></a> &nbsp;·&nbsp; <a href="http://54.206.27.32:8000/docs"><b>API docs</b></a><br/>
 <sub>Answers take 20–90 seconds: the agent writes SQL, runs it, and has a reviewer check the evidence before it replies.</sub>
 </p>
 
